@@ -43,6 +43,13 @@ _CHINESE_SECTION_PATTERNS = {
     "news_catalysts": r"###\s*五、(?:消息催化|后市展望)",
 }
 
+# 中文美股复盘专用 section 匹配模式
+_CHINESE_US_SECTION_PATTERNS = {
+    "market_summary": r"###\s*一、(?:盘面总览|市场总结)",
+    "index_commentary": r"###\s*二、(?:指数结构|指数点评|主要指数)",
+    "news_catalysts": r"###\s*五、(?:消息催化|新闻催化)",
+}
+
 
 @dataclass
 class MarketIndex:
@@ -141,8 +148,6 @@ class MarketAnalyzer:
         configured = normalize_report_language(
             getattr(getattr(self, "config", None), "report_language", "zh")
         )
-        if self.region == "us":
-            return "en"
         return configured
 
     def _get_template_review_language(self) -> str:
@@ -191,15 +196,19 @@ class MarketAnalyzer:
             market_names = {"us": "US Market Recap", "hk": "HK Market Recap"}
             market_name = market_names.get(self.region, "A-share Market Recap")
             return f"## {date} {market_name}"
-        return f"## {date} 大盘复盘"
+        market_names_zh = {"us": "美股复盘", "hk": "港股复盘"}
+        market_name_zh = market_names_zh.get(self.region, "大盘复盘")
+        return f"## {date} {market_name_zh}"
 
     def _get_index_hint(self) -> str:
         if self._get_review_language() == "en":
             if self.region == "us":
-                return "Analyze the key moves in the S&P 500, Nasdaq, Dow, and other major indices."
+                return "Analyze the key moves in the S&P 500, Nasdaq, Dow, Philadelphia Semiconductor Index (SOX), and other major indices."
             if self.region == "hk":
                 return "Analyze the key moves in the HSI, Hang Seng Tech, HSCEI, and other major indices."
             return "Analyze the price action in the SSE, SZSE, ChiNext, and other major indices."
+        if self.region == "us":
+            return "分析标普500、纳斯达克、道指、费城半导体（SOX）等主要指数走势，说明谁领涨/领跌，以及关键支撑压力位"
         return self.profile.prompt_index_hint
 
     def _get_strategy_prompt_block(self) -> str:
@@ -505,7 +514,7 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
         patterns = (
             _ENGLISH_SECTION_PATTERNS
             if self._get_review_language() == "en"
-            else _CHINESE_SECTION_PATTERNS
+            else (_CHINESE_US_SECTION_PATTERNS if self.region == "us" else _CHINESE_SECTION_PATTERNS)
         )
 
         if stats_block:
@@ -1050,6 +1059,71 @@ Lagging: {bottom_sectors_text if bottom_sectors_text else "N/A"}"""
 ---
 
 Output the report content directly, no extra commentary.
+"""
+
+        # 美股中文复盘 prompt
+        if review_language == "zh" and self.region == "us":
+            report_title = self._get_review_title(overview.date).removeprefix("## ").strip()
+            return f"""你是专业的美股市场分析师，请根据以下数据生成一份结构化的美股大盘复盘报告（中文输出）。
+
+【输出要求】
+- 必须输出纯 Markdown 文本格式
+- 禁止输出 JSON、代码块
+- emoji 仅在标题处少量使用（每个标题最多1个）
+- 报告风格：交易员盘后工作台，先给结论再展开数据
+- 不要重复列出已由系统注入的表格数据，正文负责解读含义
+
+---
+
+# 今日市场数据
+
+## 日期
+{overview.date}
+
+## 主要指数（含费城半导体 SOX）
+{indices_placeholder}
+
+{stats_block}
+
+## 市场新闻
+{news_placeholder}
+
+{data_no_indices_hint}
+
+{self._get_strategy_prompt_block()}
+
+---
+
+# 输出格式模板（请严格按此格式输出）
+
+## {report_title}
+
+> 一句话给出今日美股核心结论、主导因素和明日优先关注方向。
+
+### 一、盘面总览 📊
+（2-3句话概括三大指数及SOX走势，给出"强势/偏暖/震荡/偏弱"判断和情绪温度）
+
+### 二、指数结构 📈
+（{self._get_index_hint()}，重点说明SOX与大盘的相对强弱，以及关键支撑/压力位）
+
+### 三、资金与情绪 💰
+（解读VIX、成交量变化、市场宽度信号和风险偏好方向）
+
+### 四、本周重磅事件 📅
+（列出本周已发布或即将发布的重磅宏观数据，如CPI、PCE、非农、FOMC等，说明实际值/预期值（若已公布）及对市场的影响；若本周暂无数据，说明下周或近期最值得关注的事件）
+
+### 五、消息催化 📰
+（结合近三日新闻，提炼真正影响明日交易的正面催化或潜在扰动）
+
+### 六、交易计划 🎯
+（给出进攻/均衡/防守结论、仓位建议、重点关注方向、回避方向和一个触发失效条件）
+
+### 七、风险提示 ⚠️
+（列出2-4条主要风险点；最后补充"以上仅供参考，不构成投资建议"）
+
+---
+
+请直接输出复盘报告内容，不要输出其他说明文字。
 """
 
         # A 股场景使用中文提示语

@@ -1,0 +1,10 @@
+# x-stock-digest account list
+# One X/Twitter handle per line. @ is optional. Lines starting with # are ignored.
+# Edit this file to control which uploaders get scraped.
+# Seed examples (replace with the accounts you actually follow):
+
+aleabitoreddit
+# stockgodserenity
+# unusual_whales
+# DeItaone
+# zerohedge
